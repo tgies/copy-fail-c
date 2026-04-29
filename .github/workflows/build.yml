@@ -39,3 +39,11 @@ jobs:
         run: |
           file payload exploit
           echo "payload size: $(stat -c%s payload) bytes"
+      - name: upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: copy-fail-c-${{ matrix.target.arch }}
+          path: |
+            payload
+            exploit
+          retention-days: 90
