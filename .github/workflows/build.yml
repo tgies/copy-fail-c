@@ -45,10 +45,11 @@ jobs:
           fi
       - name: verify
         run: |
-          file payload exploit exploit-passwd
+          file payload exploit exploit-passwd vulnerable
           echo "payload: $(stat -c%s payload) bytes"
           echo "exploit: $(stat -c%s exploit) bytes"
           echo "exploit-passwd: $(stat -c%s exploit-passwd) bytes"
+          echo "vulnerable: $(stat -c%s vulnerable) bytes"
       - name: upload binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -56,6 +57,7 @@ jobs:
           path: |
             exploit
             exploit-passwd
+            vulnerable
           retention-days: 90
 
   # zig cc + musl-static. Produces deploy-anywhere binaries with a fully
@@ -109,7 +111,7 @@ jobs:
           if [ -n "$LD_PREFIX" ]; then
             STRIP="${LD_PREFIX}-strip"
           fi
-          for bin in exploit exploit-passwd; do
+          for bin in exploit exploit-passwd vulnerable; do
             BEFORE=$(stat -c%s "$bin")
             "$STRIP" --strip-all "$bin"
             AFTER=$(stat -c%s "$bin")
@@ -117,10 +119,11 @@ jobs:
           done
       - name: verify
         run: |
-          file payload exploit exploit-passwd
+          file payload exploit exploit-passwd vulnerable
           echo "payload: $(stat -c%s payload) bytes"
           echo "exploit: $(stat -c%s exploit) bytes"
           echo "exploit-passwd: $(stat -c%s exploit-passwd) bytes"
+          echo "vulnerable: $(stat -c%s vulnerable) bytes"
       - name: upload binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -128,6 +131,7 @@ jobs:
           path: |
             exploit
             exploit-passwd
+            vulnerable
           retention-days: 90
 
   release:
@@ -150,9 +154,11 @@ jobs:
           for d in artifacts/copy-fail-c-*; do
             base=$(basename "$d")
             passwd_name="${base/copy-fail-c-/copy-fail-c-passwd-}"
+            vulnerable_name="${base/copy-fail-c-/copy-fail-c-vulnerable-}"
             cp "$d/exploit" "release/$base"
             cp "$d/exploit-passwd" "release/$passwd_name"
-            chmod +x "release/$base" "release/$passwd_name"
+            cp "$d/vulnerable" "release/$vulnerable_name"
+            chmod +x "release/$base" "release/$passwd_name" "release/$vulnerable_name"
           done
           ls -la release/
       - name: create release
@@ -181,6 +187,14 @@ jobs:
             Mutates four bytes of /etc/passwd's page cache, then execs `su`.
             Works where the binary-mutation route is blocked but has a
             narrower cashout surface; see README for details.
+
+          Detection (non-destructive):
+
+          * \`copy-fail-c-vulnerable-<arch>-<libc>\`: vulnerability checker.
+            Creates a local testfile and runs the AF_ALG/splice primitive
+            against its own page cache to detect kernel susceptibility,
+            without touching any system file. Runs unprivileged. Exits 100
+            if vulnerable, 0 otherwise.
 
           Build modes:
 
