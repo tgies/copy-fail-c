@@ -58,7 +58,7 @@ PAYLOAD_BASE_CFLAGS ?= -nostdlib -static -Os -s \
 PAYLOAD_PACK_LDFLAGS ?= -Wl,-N -Wl,-z,max-page-size=0x10
 PAYLOAD_CFLAGS ?= $(PAYLOAD_BASE_CFLAGS) $(PAYLOAD_PACK_LDFLAGS)
 
-.PHONY: all clean info musl-shim musl-static zig-musl-static
+.PHONY: all clean info musl-shim musl-static zig-musl-static FORCE
 
 all: exploit
 
@@ -85,24 +85,35 @@ musl-static: musl-shim
 	    CFLAGS="$(CFLAGS) -isystem $(CURDIR)/$(MUSL_SHIM_DIR)"
 
 # zig cc rejects GNU ld's -N/--omagic flag before invoking its linker. Keep the
-# tight page-size hint, which Zig accepts and which still produces compact
-# nolibc payloads for the CI musl matrix.
+# tight page-size hint, which Zig accepts. The generated ABI donor object makes
+# `ld -r -b binary` preserve target-specific ELF flags, such as RISC-V's
+# floating-point ABI, in payload.o.
 ZIG_PAYLOAD_PACK_LDFLAGS ?= -Wl,-z,max-page-size=0x10
+ZIG_CC ?= zig cc
 zig-musl-static: musl-shim
 	@test -n "$(ZIG_TARGET)" || { echo "ZIG_TARGET is required, e.g. x86_64-linux-musl" >&2; exit 1; }
-	$(MAKE) CC="zig cc -target $(ZIG_TARGET)" \
+	$(MAKE) CC="$(ZIG_CC) -target $(ZIG_TARGET)" \
 	    LD="$(LD)" \
+	    PAYLOAD_OBJ_DEPS="payload-abi.o" \
+	    PAYLOAD_ABI_OBJ_CMD="$(ZIG_CC) -target $(ZIG_TARGET) -x c -c /dev/null -o payload-abi.o" \
+	    PAYLOAD_OBJ_CMD="$(LD) -r -z noexecstack -o payload.o payload-abi.o -b binary payload" \
 	    PAYLOAD_CFLAGS="$(PAYLOAD_BASE_CFLAGS) $(ZIG_PAYLOAD_PACK_LDFLAGS) -isystem $(CURDIR)/$(MUSL_SHIM_DIR)" \
 	    CFLAGS="$(CFLAGS) -isystem $(CURDIR)/$(MUSL_SHIM_DIR)"
 
 payload: payload.c
 	$(CC) $(PAYLOAD_CFLAGS) $< -o $@
 
-# Note: the synthesized symbol names are derived from the input filename as
-# given on the command line. We pass `payload` (not `./payload`), so the
-# symbols are _binary_payload_start etc., not _binary___payload_start.
-payload.o: payload
-	$(LD) -r -b binary -o $@ $<
+# Default embed path: the synthesized symbol names are derived from the input
+# filename as given on the command line. We pass `payload` (not `./payload`),
+# so the symbols are _binary_payload_start etc., not _binary___payload_start.
+PAYLOAD_OBJ_DEPS ?=
+PAYLOAD_OBJ_CMD ?= $(LD) -r -b binary -o $@ $<
+PAYLOAD_ABI_OBJ_CMD ?= @echo "PAYLOAD_ABI_OBJ_CMD is required" >&2; exit 1
+payload.o: payload $(PAYLOAD_OBJ_DEPS)
+	$(PAYLOAD_OBJ_CMD)
+
+payload-abi.o: FORCE
+	$(PAYLOAD_ABI_OBJ_CMD)
 
 exploit: exploit.c payload.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -static -o $@ $^
@@ -119,4 +130,4 @@ info: payload payload.o
 	@readelf -S payload | grep -E 'Name|\.text|\.rodata|\.data|\.bss' | head -10
 
 clean:
-	rm -rf exploit payload payload.o .musl-shim
+	rm -rf exploit payload payload.o payload-abi.o .musl-shim
