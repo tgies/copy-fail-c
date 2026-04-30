@@ -4,6 +4,7 @@ name: build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -27,7 +28,9 @@ jobs:
           - { arch: ppc64le, prefix: powerpc64le-linux-gnu, apt: 'gcc-powerpc64le-linux-gnu linux-libc-dev-ppc64el-cross libc6-dev-ppc64el-cross' }
           - { arch: s390x,   prefix: s390x-linux-gnu,       apt: 'gcc-s390x-linux-gnu linux-libc-dev-s390x-cross libc6-dev-s390x-cross' }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - name: install cross-toolchain
         if: matrix.target.apt != ''
         run: |
@@ -45,13 +48,11 @@ jobs:
           file payload exploit
           echo "payload: $(stat -c%s payload) bytes"
           echo "exploit: $(stat -c%s exploit) bytes"
-      - name: upload binaries
-        uses: actions/upload-artifact@v4
+      - name: upload binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: copy-fail-c-${{ matrix.target.arch }}-glibc
-          path: |
-            payload
-            exploit
+          path: exploit
           retention-days: 90
 
   # zig cc + musl-static. Produces deploy-anywhere binaries (no glibc
@@ -73,10 +74,13 @@ jobs:
           - { arch: ppc64le, zig_target: powerpc64le-linux-musl, apt: 'binutils-powerpc64le-linux-gnu linux-libc-dev-ppc64el-cross', ld_prefix: powerpc64le-linux-gnu, uapi_base: /usr/powerpc64le-linux-gnu/include,    uapi_asm: /usr/powerpc64le-linux-gnu/include/asm }
           - { arch: s390x,   zig_target: s390x-linux-musl,       apt: 'binutils-s390x-linux-gnu linux-libc-dev-s390x-cross',    ld_prefix: s390x-linux-gnu,       uapi_base: /usr/s390x-linux-gnu/include,          uapi_asm: /usr/s390x-linux-gnu/include/asm }
     steps:
-      - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.14.0
+          use-cache: false
       - name: install cross-binutils and UAPI headers
         if: matrix.target.apt != ''
         run: |
@@ -99,11 +103,64 @@ jobs:
           file payload exploit
           echo "payload: $(stat -c%s payload) bytes"
           echo "exploit: $(stat -c%s exploit) bytes"
-      - name: upload binaries
-        uses: actions/upload-artifact@v4
+      - name: upload binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: copy-fail-c-${{ matrix.target.arch }}-musl
-          path: |
-            payload
-            exploit
+          path: exploit
           retention-days: 90
+
+  # Tagged releases attach all twelve binaries to a GitHub Release.
+  # Triggered only on `v*` tag pushes; ordinary main pushes skip this job.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-glibc, build-musl]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: download all artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+      - name: rename binaries for release upload
+        run: |
+          mkdir -p release
+          for d in artifacts/copy-fail-c-*; do
+            base=$(basename "$d")
+            cp "$d/exploit" "release/$base"
+            chmod +x "release/$base"
+          done
+          ls -la release/
+      - name: create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file - release/* <<EOF
+          Cross-platform C port of CVE-2026-31431 (Copy Fail).
+
+          Discovery and disclosure: Theori / Xint, https://copy.fail/
+
+          ## Binaries
+
+          Each binary is statically linked. Download the one matching the target's
+          architecture and either libc variant.
+
+          * \`-glibc\` builds: GNU cross-toolchain, glibc-static. Larger (~800 KB)
+            but functionally identical to source-built binaries on a glibc system.
+          * \`-musl\` builds: zig cc + musl-static. Smaller (~30-60 KB) and
+            forward-compatible with any glibc version on the target.
+
+          Architectures: x86_64, aarch64, armv7, riscv64, ppc64le, s390x.
+
+          See [README](https://github.com/$REPO/blob/main/README.md)
+          for the kernel-version window of applicability and a description of
+          the exploit mechanism.
+          EOF
