@@ -1,5 +1,7 @@
 # Copy Fail (CVE-2026-31431) - C port
 
+*[English (en)](README.md) ∙ [日本語 (ja)](README.ja.md) ∙ [简体中文 (zh-cn)](README.zh-cn.md)*
+
 A cross-platform C reimplementation of the Copy Fail Linux LPE (CVE-2026-31431),
 disclosed 2026-04-29 by Theori / Xint. See the canonical writeup at
 [copy.fail](https://copy.fail/) for the full vulnerability description, timeline,
