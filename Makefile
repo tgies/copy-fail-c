@@ -116,16 +116,24 @@ payload.o: payload $(PAYLOAD_OBJ_DEPS)
 payload-abi.o: FORCE
 	$(PAYLOAD_ABI_OBJ_CMD)
 
-exploit: exploit.c payload.o
+# Shared AF_ALG/splice page-cache mutation primitive. Linked into all three
+# binaries; declaration in utils.h, definition in utils.c.
+utils.o: utils.c utils.h
+	$(CC) $(CFLAGS) -c $< -o $@
+
+exploit: exploit.c utils.o payload.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -static -o $@ $^
 
-vulnerable: vulnerable.c
+# Non-destructive vulnerability checker. Mutates a local testfile's page
+# cache and reads it back to detect kernel susceptibility without touching
+# any system file.
+vulnerable: vulnerable.c utils.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -static -o $@ $^
 
 # /etc/passwd UID-flip variant. No payload needed; mutates four ASCII bytes
 # of /etc/passwd's page cache to flip the user's UID to "0000", then execs su.
-exploit-passwd: exploit-passwd.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -static -o $@ $<
+exploit-passwd: exploit-passwd.c utils.o
+	$(CC) $(CFLAGS) $(LDFLAGS) -static -o $@ $^
 
 info: payload payload.o
 	@echo "=== payload size ==="
@@ -139,4 +147,4 @@ info: payload payload.o
 	@readelf -S payload | grep -E 'Name|\.text|\.rodata|\.data|\.bss' | head -10
 
 clean:
-	rm -rf exploit vulnerable exploit-passwd payload payload.o payload-abi.o .musl-shim
+	rm -rf exploit vulnerable exploit-passwd payload payload.o payload-abi.o utils.o testfile .musl-shim
