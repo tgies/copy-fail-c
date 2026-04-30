@@ -13,9 +13,6 @@ in the project's own source.
 Author of this port: Tony Gies <tony.gies@crashunited.com>.
 Discovery and original disclosure: Theori / Xint.
 
-> [!WARNING]
-> musl builds are broken at the moment. Use the glibc ones.
-
 ## Repository layout
 
 ```
