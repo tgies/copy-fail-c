@@ -15,7 +15,9 @@ Copy Fail 리눅스 로컬 권한 상승(LPE) 취약점(CVE-2026-31431)을 C 언
 copy-fail-c/
 ├── exploit.c           드로퍼 (바이너리 변조 변형)
 ├── exploit-passwd.c    드로퍼 (/etc/passwd UID 변조 변형)
+├── vulnerable.c        비파괴적 취약점 검사기
 ├── payload.c           드롭되는 본체 (setgid+setuid+execve sh)
+├── utils.c, utils.h    공유 AF_ALG/splice 페이지 캐시 변조 원리
 ├── Makefile            빌드 오케스트레이션
 ├── nolibc/             torvalds/linux의 tools/include/nolibc에서 가져온 벤더 코드
 └── README.md           이 파일 (설명서)
@@ -27,7 +29,8 @@ copy-fail-c/
 ├── payload             작은 정적 ELF, 드로퍼에 바이트 형태로 내장됨
 ├── payload.o           `ld -r -b binary`를 통해 재배치 가능한 .o로 래핑된 페이로드
 ├── exploit             드로퍼, 바이너리 변조 변형
-└── exploit-passwd      드로퍼, /etc/passwd UID 변조 변형
+├── exploit-passwd      드로퍼, /etc/passwd UID 변조 변형
+└── vulnerable          비파괴적 취약점 검사기
 ```
 
 `exploit.c`는 대상 바이너리를 읽기 전용으로 연 다음, 내장된 페이로드의 4바이트 단위마다 AF_ALG를 통해 가짜 AEAD 복호화를 한 번 실행합니다. 이때 암호문 입력은 대상의 페이지 캐시 페이지에서 splice()를 통해 제공됩니다. authencesn 템플릿의 제자리(in-place) 최적화는 splice된 소스 페이지를 암호문 입력이자 평문 출력 대상으로 동시에 처리하므로, 인증 검증이 요청을 거부할 때쯤에는 이미 (실패할) 복호화가 페이지 캐시 페이지를 덮어쓴 상태가 됩니다. 4 * N번의 반복 후, 대상의 캐시된 이미지는 페이로드와 바이트 단위로 완전히 교체됩니다. 대상을 execve()하면 변조된 페이지가 로드됩니다. 디스크상의 inode는 여전히 setuid root이므로 커널은 root 권한을 부여하고 페이로드를 실행합니다.
@@ -35,6 +38,8 @@ copy-fail-c/
 `payload.c`는 단순하고 이식성 있는 C 코드입니다: `setgid(0); setuid(0); execve("/bin/sh", ...)`. nolibc는 `_start`, 시스템 콜 메커니즘, 그리고 아키텍처별 레지스터 조작을 제공합니다.
 
 두 번째 변형인 `exploit-passwd.c`는 setuid 바이너리의 이미지 대신 /etc/passwd의 페이지 캐시 중 4바이트를 변조합니다. 내장된 페이로드가 필요하지 않으며 바이너리 변조 경로가 차단된 시스템에서도 작동하지만, 이로 인해 권한 상승(cashout)을 달성할 수 있는 공격 표면(attack surface)은 훨씬 좁아집니다.
+
+`vulnerable.c`는 익스플로잇이 아닙니다. 문자열 `init`이 들어 있는 로컬 `testfile`을 생성한 후, 동일한 `patch_chunk()` 원리를 해당 파일의 페이지 캐시에 적용하여 바이트를 `vulnerable`로 덮어쓰려고 시도합니다. 읽어 들인 내용이 일치하면 실행 중인 커널은 CVE-2026-31431의 영향 범위 내에 있습니다. 디스크상의 inode는 변경되지 않습니다. `testfile`은 종료 시 제거되며, 페이지 캐시의 변조도 함께 사라집니다. 권한 없이 실행할 수 있습니다. 취약하면 종료 코드 100, 그렇지 않으면 0을 반환합니다.
 
 ## 빌드
 

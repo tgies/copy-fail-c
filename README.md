@@ -21,7 +21,9 @@ Discovery and original disclosure: Theori / Xint.
 copy-fail-c/
 ├── exploit.c           the dropper (binary-mutation variant)
 ├── exploit-passwd.c    the dropper (/etc/passwd UID-flip variant)
+├── vulnerable.c        non-destructive vulnerability checker
 ├── payload.c           the body that gets dropped (setgid+setuid+execve sh)
+├── utils.c, utils.h    shared AF_ALG/splice page-cache mutation primitive
 ├── Makefile            build orchestration
 ├── nolibc/             vendored from torvalds/linux tools/include/nolibc
 └── README.md           this file
@@ -33,7 +35,8 @@ After `make`:
 ├── payload             tiny static ELF, embedded into the dropper as bytes
 ├── payload.o           payload wrapped as a relocatable .o by `ld -r -b binary`
 ├── exploit             dropper, binary-mutation variant
-└── exploit-passwd      dropper, /etc/passwd UID-flip variant
+├── exploit-passwd      dropper, /etc/passwd UID-flip variant
+└── vulnerable          non-destructive vulnerability checker
 ```
 
 `exploit.c` opens the target binary read-only, then for each 4-byte window of
@@ -55,6 +58,14 @@ A second variant, `exploit-passwd.c`, mutates four bytes of /etc/passwd's page
 cache instead of a setuid binary's image. It needs no embedded payload and
 works on systems where the binary-mutation route is blocked, but its cashout
 surface is much narrower.
+
+`vulnerable.c` is not an exploit. It creates a local `testfile` containing the
+string `init`, then runs the same `patch_chunk()` primitive against that file's
+own page cache to overwrite the bytes with `vulnerable`. If the read-back
+contents match, the running kernel is in-window for CVE-2026-31431. The
+on-disk inode is never modified; `testfile` is removed on exit; the page-cache
+mutation evaporates with it. Runs unprivileged. Exits 100 if vulnerable, 0
+otherwise.
 
 
 ## Build
