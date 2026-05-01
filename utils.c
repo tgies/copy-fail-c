@@ -45,7 +45,11 @@
  * All zero. The key value is irrelevant; the primitive only needs setkey
  * to succeed so subsequent sendmsg/splice ops are accepted. */
 static const unsigned char AUTHENC_KEY[8 + 32] = {
+#if __BYTE_ORDER == __LITTLE_ENDIAN
     0x08, 0x00, 0x01, 0x00,
+#else
+    0x00, 0x08, 0x00, 0x01,
+#endif
     0x00, 0x00, 0x00, 0x10,
 };
 
