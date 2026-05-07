@@ -3,6 +3,7 @@ exploit
 exploit-passwd
 payload
 payload.o
+vulnerable
 *.o
 .musl-shim/
 
