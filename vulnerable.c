@@ -89,23 +89,24 @@ int main(int argc, char **argv) {
         fprintf(stderr, "[+] patch fd=%d off=%lld bytes=\"%s\"\n",
                 file_fd, (long long)off, window);
         if (patch_chunk(file_fd, off, window) < 0) {
+            int ret = 1;
             if (errno == EAFNOSUPPORT) {
                 fprintf(stderr, "[+] AF_ALG module not available; not vulnerable\n");
-                close(file_fd);
-                unlink(target);
-                return 0;
+                ret = 0;
             }
-            if (errno == ENOENT) {
+            else if (errno == ENOENT) {
                 fprintf(stderr, "[+] AF_ALG aead algorithm not available; not vulnerable\n");
-                close(file_fd);
-                unlink(target);
-                return 0;
+                ret = 0;
             }
-            fprintf(stderr, "[-] patch_chunk failed at offset %lld\n",
+            else {
+                fprintf(stderr, "[-] patch_chunk failed at offset %lld\n",
                     (long long)off);
+                ret = 1;
+            }
+
             close(file_fd);
             unlink(target);
-            return 1;
+            return ret;
         }
         fprintf(stderr, "[+] patch ok\n");
     }
