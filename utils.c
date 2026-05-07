@@ -15,6 +15,7 @@
 #define _GNU_SOURCE
 #include "utils.h"
 
+#include <endian.h>
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
